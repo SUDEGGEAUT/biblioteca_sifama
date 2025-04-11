@@ -118,7 +118,7 @@ class SifamaLogin:
             bg="#800000",
             fg="#FFC0CB",
             )
-        close_button.grid(row=1, column=2, pady=10)
+        close_button.grid(row=1, column=0, pady=10)
 
     def login_window(self):
         # Criação da interface gráfica para entrada de login e senha
