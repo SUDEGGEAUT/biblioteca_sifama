@@ -9,6 +9,7 @@ import selenium.webdriver.common.keys as Keys
 import tkinter as tk
 from tkinter import scrolledtext
 from tkinter import messagebox
+import threading
 import os
 import sys
 import logging
@@ -24,11 +25,11 @@ class SifamaLogin:
         chrome_options.add_argument("--headless")
         service = Service(chromedriver_path)
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
-        self.driver.get(site_sifama)
+        #self.driver.get(site_sifama)
        
         self.root = tk.Tk()
         self.root.withdraw()
-
+        
     # Função para realizar login no sistema SIFAMA
     def login(self, user, password):
         logging.info('Acessando o SIFAMA')
@@ -82,7 +83,7 @@ class SifamaLogin:
         prompt_window = tk.Toplevel(self.root)
         prompt_window.title("Log de Execução")
 
-        prompt_window.configure(bg="lightgray")
+        prompt_window.configure(bg="white")
 
         output_text = scrolledtext.ScrolledText(
             prompt_window,
@@ -90,8 +91,8 @@ class SifamaLogin:
             width=130,
             bg="lightgray",
             fg="black",
+            font=("Arial",12),
             insertbackground="white",
-            font=("Courier", 10)
         )
         output_text.grid(row=0, column=0, padx=10, pady=10)
 
@@ -112,43 +113,101 @@ class SifamaLogin:
         close_button = tk.Button(
             prompt_window,
             text="Fechar",
-            command=lambda: (prompt_window.destroy(), self.driver.quit(), sys.exit()),
-            bg="red",
-            fg="white"
+            command=lambda: (self.driver.quit(), prompt_window.destroy(), sys.exit()),
+            font=("Arial", 10),
+            bg="#800000",
+            fg="#FFC0CB",
             )
-        close_button.grid(row=1, column=0, pady=10)
+        close_button.grid(row=1, column=2, pady=10)
 
     def login_window(self):
         # Criação da interface gráfica para entrada de login e senha
         login_window = tk.Toplevel(self.root)
         login_window.title("Login SIFAMA")
+        login_window.geometry("250x125")
+        login_window.resizable(False, False)
 
-        # Labels e campos de entrada
-        tk.Label(login_window, text="Usuário:").grid(row=0, column=0, padx=20, pady=10)
-        login_entry = tk.Entry(login_window)
-        login_entry.grid(row=0, column=1, padx=40, pady=10)
+        # Labels e campos de entrada de Usuario
+        tk.Label(login_window, text="Usuário:", font=("Arial", 10)).grid(row=0, column=0, padx=20, pady=10)
+        login_entry = tk.Entry(login_window, bg="#DCDCDC")
+        login_entry.grid(row=0, column=1, padx=5, pady=10)
 
-        tk.Label(login_window, text="Senha:").grid(row=1, column=0, padx=20, pady=10)
-        password_entry = tk.Entry(login_window, show="*")
-        password_entry.grid(row=1, column=1, padx=40, pady=10)
+        # Campo de entrada de Senha
+        tk.Label(login_window, text="Senha:", font=("Arial", 10)).grid(row=1, column=0, padx=20, pady=10)
+        password_entry = tk.Entry(login_window, bg="#DCDCDC", show="*")
+        password_entry.grid(row=1, column=1, padx=5, pady=10)
+        password_entry.bind("<Return>", lambda event: login_submit())
+
+        # Variável para armazenar o frame de sobreposição
+        overlay_frame = None
+        spinner_canvas = None
+        arc = None
+
+        def animate_spinner(angle=0):
+            if spinner_canvas and arc and spinner_canvas.winfo_exists():  # Verifica se o spinner_canvas e o arco foram criados
+                spinner_canvas.itemconfig(arc, start=angle)
+                spinner_canvas.update()
+                self.spinner_animation = login_window.after(50, animate_spinner, (angle + 10) % 360)
+
+        def show_spinner():
+            nonlocal overlay_frame, spinner_canvas, arc  # Declara as variáveis como não locais
+            if overlay_frame is not None:
+                overlay_frame.destroy()  # Remove o frame anterior, se existir
+
+            overlay_frame = tk.Frame(login_window)
+            overlay_frame.place(relx=0, rely=0, relwidth=1, relheight=1)  # Ocupa toda a janela
+            overlay_frame.grid_propagate(False)
+
+            # Conteúdo do overlay (spinner e mensagem)
+            spinner_canvas = tk.Canvas(overlay_frame, width=100, height=100, highlightthickness=0)
+            spinner_canvas.place(relx=0.5, rely=0.4, anchor="center")  # Centraliza o spinner
+            arc = spinner_canvas.create_arc(10, 10, 90, 90, start=0, extent=150, outline="#4682B4", width=5, style="arc")
+            animate_spinner()
+
+        def hide_spinner():
+            nonlocal overlay_frame  # Permite acessar a variável overlay_frame
+            if overlay_frame is not None:
+                overlay_frame.destroy()  # Remove o frame de sobreposição
+            if hasattr(self, 'spinner_animation'):
+                login_window.after_cancel(self.spinner_animation)
 
         def login_submit():
             user = login_entry.get()
             password = password_entry.get()
-
             if user and password:
-                if self.login(user, password):
-                    login_window.destroy()
-                else:
-                    login_entry.delete(0, tk.END)
-                    password_entry.delete(0, tk.END)
+                show_spinner()
+                threading.Thread(target=process_login, args=(user, password)).start()
             else:
                 messagebox.showwarning("Aviso", "Por favor, preencha todos os campos")
 
-        # Botão de envio
-        submit_button = tk.Button(login_window, text="Entrar", command=login_submit)
-        submit_button.grid(row=2, column=0, columnspan=2, pady=10)
+        def process_login(user, password):
+            if self.login(user, password):
+                login_window.destroy()
+            else:
+                login_entry.delete(0, tk.END)
+                password_entry.delete(0, tk.END)
+            hide_spinner()
 
+        # Botão de envio
+        submit_button = tk.Button(
+            login_window,
+            text="Entrar",
+            font=("Arial", 10),
+            bg="#90EE90",
+            fg="#006400",
+            command=login_submit)
+        submit_button.grid(row=2, column=1, pady=10)
+
+        # Botão para fechar a janela
+        close_button = tk.Button(
+            login_window,
+            text="Cancelar",
+            command=lambda: (self.driver.quit(), sys.exit()),
+            font=("Arial", 9),
+            bg="#800000",
+            fg="#FFC0CB"
+            )
+        close_button.grid(row=2, column=0, columnspan=1, pady=10)
 
 if __name__ == "__main__":
     # O caminho do arquivo que você quer enviar
