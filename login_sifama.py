@@ -3,9 +3,8 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
-import selenium.webdriver.common.keys as Keys
 import tkinter as tk
 from tkinter import scrolledtext
 from tkinter import messagebox
@@ -13,43 +12,136 @@ import threading
 import os
 import sys
 import logging
+import time
 
 class SifamaLogin:
-    def __init__(self, chromedriver_path):
+    def __init__(self, chromedriver_path, saved_user=None, saved_password=None):
         if not os.path.isfile(chromedriver_path):
             logging.error(f"Chromedriver não encontrado: {chromedriver_path}")
             raise FileNotFoundError("Chromedriver não encontrado.")
         
-        site_sifama = r'https://appweb1.antt.gov.br/sca/Site/Login.aspx?ReturnUrl=%2fsar%2fSite'
+        # Configurações do ChromeDriver
+        download_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "download_extrato")
+
+        prefs = {
+            "download.default_directory": download_dir,
+            "download.prompt_for_download": False,
+            "download.directory_upgrade": True,
+            "safebrowsing.enabled": True
+        }
         chrome_options = Options()
-        chrome_options.add_argument("--headless")
+        chrome_options.add_experimental_option("prefs", prefs)
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--remote-debugging-port=9222")
+        chrome_options.add_argument("--headless")  # Modo headless maximized
+        
+        # Inicializa o ChromeDriver com logs detalhados
         service = Service(chromedriver_path)
-        self.driver = webdriver.Chrome(service=service, options=chrome_options)
-        #self.driver.get(site_sifama)
-       
+        try:
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        except Exception as e:
+            logging.error(f"Erro ao inicializar o ChromeDriver: {e}")
+            raise
+        self.driver.set_page_load_timeout(600)
+
         self.root = tk.Tk()
         self.root.withdraw()
-        
+
+        self.saved_user = saved_user
+        self.saved_password = saved_password
+    
     # Função para realizar login no sistema SIFAMA
-    def login(self, user, password):
-        logging.info('Acessando o SIFAMA')
+    def login_action(self, user=None, password=None):
         try:
-            # Localiza os campos de usuário e senha
+            # Usa os valores salvos, se nenhum novo valor for fornecido
+            user = user or self.saved_user
+            password = password or self.saved_password
+
+            # Valida se as credenciais estão disponíveis momentaniamente
+            if not user or not password:
+                logging.error("Usuário ou senha não fornecidos.")
+                return False
+
+            # Salva os valores fornecidos para reutilização futura
+            self.saved_user = user
+            self.saved_password = password
+
+            # Localiza os campos de entrada
             user_field = self.driver.find_element(By.CSS_SELECTOR, '*[id*="TextBoxUsuario"]')
             password_field = self.driver.find_element(By.CSS_SELECTOR, '*[id*="TextBoxSenha"]')
             login_button = self.driver.find_element(By.CSS_SELECTOR, '*[id*="ButtonOk"]')
 
-            # Preenche os campos e clica no botão de login
+            # Preenche os campos de entrada
             user_field.send_keys(user)
             password_field.send_keys(password)
             login_button.click()
 
+            return True
+        except Exception as e:
+            logging.error(f"Erro durante a execução de login_action: {e}")
+            return False
+
+    def bem_vindo(self):
+        WebDriverWait(self.driver, 120).until(
+            EC.presence_of_element_located((By.XPATH, '//*[@id="ContentPlaceHolderCorpo_LabelBemVindo"]'))
+        )
+
+    def erro_sistema(self):
+            return "Exceção de Sistema" in self.driver.page_source
+
+    def erro_servidor(self):
+            return "Server Error in '/sar' Application" in self.driver.page_source
+
+    def recarregar_erro(self, sifama_site):
+
+        if self.erro_sistema() or self.erro_servidor():
+            logging.warning("Erro no sistema detectado. Recarregando a página.")
+            self.driver.delete_network_conditions()
+            self.driver.delete_all_cookies()
+            self.driver.refresh()
+            time.sleep(2)
+            self.driver.get(sifama_site)
+            self.login_action()
+                
+            logging.info("Página recarregada com sucesso.")
+            time.sleep(3)  # Pequeno atraso entre as tentativas
+            return
+        else:
+            return
+
+    def reiniciar_selenium(self, chromedriver_path, sifama_site):
+        try:
+            self.driver.quit()
+            logging.info("Driver fechado com sucesso.")
+        except Exception as e:
+            logging.warning(f"Erro ao fechar o driver: {e}")
+        finally:
+            time.sleep(2)
+            novo_sifama = SifamaLogin(chromedriver_path, saved_user=self.saved_user, saved_password=self.saved_password)
+            novo_sifama.driver.get(sifama_site)
+            time.sleep(2)
+            novo_sifama.login_action(novo_sifama.saved_user, novo_sifama.saved_password)
+            novo_sifama.bem_vindo()
+            return novo_sifama
+
+    def login(self, user, password):
+        user_field = self.driver.find_element(By.CSS_SELECTOR, '*[id*="TextBoxUsuario"]')
+        password_field = self.driver.find_element(By.CSS_SELECTOR, '*[id*="TextBoxSenha"]')
+        logging.info('Acessando o SIFAMA')   
+        logging.info("------------------------------------------------")
+        try:
+            self.login_action(user, password)  # Chama o método login_action
             # Aguarda a página carregar e verifica se o login foi bem-sucedido
             WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.ID, "ContentPlaceHolderCorpo_LabelBemVindo"))
             )
-            messagebox.showinfo("Sucesso", "Login efetuado com sucesso!")
+            self.root.after(0, lambda: messagebox.showinfo("Sucesso", "Login efetuado com sucesso!"))
             return True
+
         except TimeoutException:
             # Caso o elemento de sucesso não seja encontrado, verifica a mensagem de erro
             try:
@@ -58,7 +150,7 @@ class SifamaLogin:
                 )
                 error_message = error_message_element.text
                 logging.info(f"Mensagem de erro: {error_message}")
-                messagebox.showwarning("Aviso", error_message)
+                self.root.after(0, lambda: messagebox.showwarning("Aviso", error_message))
                 try:
                     ok_button = WebDriverWait(self.driver, 10).until(
                         EC.presence_of_element_located((By.ID, 'MessageBox_ButtonOk'))
@@ -76,9 +168,9 @@ class SifamaLogin:
             return False
         except Exception as e:
             logging.error(f"Erro durante o login: {e}")
-            messagebox.showerror("Erro", "Erro inesperado durante o login.")
+            self.root.after(0, lambda: messagebox.showerror("Erro", "Erro inesperado durante o login."))
             return False
-    
+      
     def prompt_window(self):
         prompt_window = tk.Toplevel(self.root)
         prompt_window.title("Log de Execução")
@@ -113,7 +205,7 @@ class SifamaLogin:
         close_button = tk.Button(
             prompt_window,
             text="Fechar",
-            command=lambda: (self.driver.quit(), prompt_window.destroy(), sys.exit()),
+            command=lambda: (sys.exit()),
             font=("Arial", 10),
             bg="#800000",
             fg="#FFC0CB",
@@ -202,19 +294,9 @@ class SifamaLogin:
         close_button = tk.Button(
             login_window,
             text="Cancelar",
-            command=lambda: (self.driver.quit(), sys.exit()),
+            command=lambda: (sys.exit()),
             font=("Arial", 9),
             bg="#800000",
             fg="#FFC0CB"
             )
         close_button.grid(row=2, column=0, columnspan=1, pady=10)
-
-if __name__ == "__main__":
-    # O caminho do arquivo que você quer enviar
-    atual_dir = os.path.dirname(os.path.abspath(__file__))
-    chromedriver_path = os.path.join(atual_dir, "chromedriver-win64", "chromedriver.exe")
-    
-    sifama = SifamaLogin(chromedriver_path)
-    sifama.login_window()
-    sifama.prompt_window()
-    sifama.root.mainloop()
