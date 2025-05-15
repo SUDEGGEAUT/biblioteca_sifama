@@ -14,6 +14,7 @@ import sys
 import logging
 import time
 
+
 class SifamaLogin:
     def __init__(self, chromedriver_path, saved_user=None, saved_password=None):
         if not os.path.isfile(chromedriver_path):
@@ -36,9 +37,8 @@ class SifamaLogin:
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--remote-debugging-port=9222")
         chrome_options.add_argument("--headless")  # Modo headless maximized
-        
+
         # Inicializa o ChromeDriver com logs detalhados
         service = Service(chromedriver_path)
         try:
@@ -53,7 +53,16 @@ class SifamaLogin:
 
         self.saved_user = saved_user
         self.saved_password = saved_password
-    
+
+    def parcelamento_div(self):
+        WebDriverWait(self.driver, 360).until(
+            EC.presence_of_element_located((By.XPATH, '//*[@id="parcelamento"]'))
+        )
+    def progress_div(self):
+        WebDriverWait(self.driver, 260).until(
+            EC.invisibility_of_element_located((By.XPATH, '//*[@id="Progress_UpdateProgress"]/div'))
+        )
+
     # Função para realizar login no sistema SIFAMA
     def login_action(self, user=None, password=None):
         try:
@@ -103,7 +112,9 @@ class SifamaLogin:
             self.driver.delete_network_conditions()
             self.driver.delete_all_cookies()
             self.driver.refresh()
-            time.sleep(2)
+            WebDriverWait(self.driver, 30).until(
+                 EC._element_if_visible((By.CSS_SELECTOR, '*[id*="TextBoxUsuario"]'))
+            )
             self.driver.get(sifama_site)
             self.login_action()
                 
