@@ -37,6 +37,7 @@ class SifamaLogin:
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--window-size=1920,1080")
         chrome_options.add_argument("--headless")  # Modo headless maximized
 
         # Inicializa o ChromeDriver com logs detalhados
@@ -187,11 +188,11 @@ class SifamaLogin:
         prompt_window.title("Log de Execução")
 
         prompt_window.configure(bg="white")
-
+        prompt_window.resizable(False, False)
         output_text = scrolledtext.ScrolledText(
             prompt_window,
             height=30,
-            width=130,
+            width=100,
             bg="lightgray",
             fg="black",
             font=("Arial",12),
